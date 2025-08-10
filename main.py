@@ -88,13 +88,26 @@ def run_dashboard():
     # Change to the current directory
     os.chdir(Path(__file__).parent)
     
-    # Run Streamlit app
+    # Check if we're in deployment environment
+    if os.environ.get('STREAMLIT_SERVER_PORT'):
+        # We're already in Streamlit, just run the app directly
+        print("Running in Streamlit environment - importing app directly")
+        try:
+            from src.dashboard.app import main as dashboard_main
+            dashboard_main()
+            return True
+        except Exception as e:
+            print(f"Error running dashboard directly: {e}")
+            return False
+    
+    # Run Streamlit app locally
     try:
         subprocess.run([
             sys.executable, "-m", "streamlit", "run", 
             "src/dashboard/app.py", 
             "--server.port=8501",
-            "--server.address=localhost"
+            "--server.address=localhost",
+            "--server.fileWatcherType=none"
         ], check=True)
     except subprocess.CalledProcessError as e:
         print(f"Error launching dashboard: {e}")
@@ -166,6 +179,17 @@ def show_status():
 
 def main():
     """Main function to handle command line arguments."""
+    # Check if we're in a deployment environment (no CLI args)
+    if len(sys.argv) == 1:
+        # Default to dashboard mode for deployment
+        print("No arguments provided - launching dashboard for deployment...")
+        success = run_dashboard()
+        if success:
+            print("Dashboard launched successfully!")
+        else:
+            print("Dashboard launch failed!")
+        return
+    
     parser = argparse.ArgumentParser(
         description="Vehicle Registration Dashboard Management System"
     )
