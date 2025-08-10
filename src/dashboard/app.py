@@ -11,6 +11,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import sys
+import os
 from pathlib import Path
 
 # Add src to path for imports
@@ -74,16 +75,75 @@ st.markdown("""
 def load_data():
     """Load and cache vehicle registration data."""
     try:
+        # Check if we're in deployment mode
+        is_deployment = os.environ.get('STREAMLIT_DEPLOYMENT', 'false').lower() == 'true'
+        
         scraper = VahanDataScraper()
+        
+        if is_deployment:
+            # In deployment, create sample data if files don't exist
+            st.info("🚀 Running in deployment mode - generating sample data...")
+        
         data = scraper.load_sample_data()
+        
+        if data.empty:
+            st.warning("📊 No sample data found - generating new sample data...")
+            # Generate sample data if none exists
+            data = scraper.generate_sample_data()
+        
         return data
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        return pd.DataFrame()
+        st.info("📊 Attempting to generate backup sample data...")
+        try:
+            # Fallback: create minimal sample data directly
+            import pandas as pd
+            import numpy as np
+            from datetime import datetime, timedelta
+            
+            # Create 30 days of sample data
+            dates = pd.date_range(
+                start=datetime.now() - timedelta(days=30),
+                end=datetime.now(),
+                freq='D'
+            )
+            
+            sample_data = []
+            categories = ['Two Wheeler', 'Car', 'Commercial Vehicle', 'Bus', 'Truck']
+            manufacturers = ['Maruti', 'Hyundai', 'Tata', 'Honda', 'Toyota']
+            
+            for date in dates:
+                for category in categories:
+                    for manufacturer in manufacturers:
+                        registrations = np.random.randint(50, 500)
+                        sample_data.append({
+                            'date': date,
+                            'category': category,
+                            'manufacturer': manufacturer,
+                            'registrations': registrations,
+                            'state': 'Sample State',
+                            'district': 'Sample District'
+                        })
+            
+            return pd.DataFrame(sample_data)
+        except Exception as fallback_error:
+            st.error(f"Critical error: {fallback_error}")
+            return pd.DataFrame()
 
 
 def main():
     """Main dashboard application."""
+    
+    # Quick deployment health check
+    try:
+        st.write("🔍 **Dashboard Status Check:**")
+        st.write(f"- Python Path: {sys.path[:2]}...")
+        st.write(f"- Working Directory: {os.getcwd()}")
+        st.write(f"- Deployment Mode: {os.environ.get('STREAMLIT_DEPLOYMENT', 'false')}")
+        st.write("✅ Dashboard initialized successfully!")
+        st.markdown("---")
+    except Exception as debug_error:
+        st.error(f"Debug error: {debug_error}")
     
     # Header
     st.markdown('<h1 class="main-header">🚗 Vehicle Registration Dashboard</h1>', 

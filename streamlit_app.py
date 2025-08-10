@@ -15,6 +15,10 @@ os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
 os.environ['STREAMLIT_SERVER_RUN_ON_SAVE'] = 'false'
 os.environ['STREAMLIT_GLOBAL_DEVELOPMENT_MODE'] = 'false'
 
+# Let the platform handle port assignment
+if 'PORT' in os.environ:
+    os.environ['STREAMLIT_SERVER_PORT'] = os.environ['PORT']
+
 # Import and run the main dashboard directly
 if __name__ == "__main__":
     from src.dashboard.app import main
