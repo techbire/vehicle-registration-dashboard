@@ -133,18 +133,7 @@ def load_data():
 
 def main():
     """Main dashboard application."""
-    
-    # Quick deployment health check
-    try:
-        st.write("🔍 **Dashboard Status Check:**")
-        st.write(f"- Python Path: {sys.path[:2]}...")
-        st.write(f"- Working Directory: {os.getcwd()}")
-        st.write(f"- Deployment Mode: {os.environ.get('STREAMLIT_DEPLOYMENT', 'false')}")
-        st.write("✅ Dashboard initialized successfully!")
-        st.markdown("---")
-    except Exception as debug_error:
-        st.error(f"Debug error: {debug_error}")
-    
+
     # Header
     st.markdown('<h1 class="main-header">🚗 Vehicle Registration Dashboard</h1>', 
                 unsafe_allow_html=True)
