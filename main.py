@@ -82,36 +82,37 @@ def run_dashboard():
     """Launch the Streamlit dashboard."""
     print("Launching dashboard...")
     
-    import subprocess
     import os
     
     # Change to the current directory
     os.chdir(Path(__file__).parent)
     
-    # Check if we're in deployment environment
-    if os.environ.get('STREAMLIT_SERVER_PORT'):
-        # We're already in Streamlit, just run the app directly
-        print("Running in Streamlit environment - importing app directly")
-        try:
-            from src.dashboard.app import main as dashboard_main
-            dashboard_main()
-            return True
-        except Exception as e:
-            print(f"Error running dashboard directly: {e}")
-            return False
-    
-    # Run Streamlit app locally
+    # Always run the app directly in deployment mode
+    print("Running dashboard directly")
     try:
-        subprocess.run([
-            sys.executable, "-m", "streamlit", "run", 
-            "src/dashboard/app.py", 
-            "--server.port=8501",
-            "--server.address=localhost",
-            "--server.fileWatcherType=none"
-        ], check=True)
-    except subprocess.CalledProcessError as e:
-        print(f"Error launching dashboard: {e}")
-        return False
+        from src.dashboard.app import main as dashboard_main
+        dashboard_main()
+        return True
+    except Exception as e:
+        print(f"Error running dashboard directly: {e}")
+        # If direct import fails, try alternative approach
+        try:
+            import subprocess
+            # For local development only
+            if not os.environ.get('STREAMLIT_SERVER_PORT') and not os.environ.get('STREAMLIT_DEPLOYMENT'):
+                subprocess.run([
+                    sys.executable, "-m", "streamlit", "run", 
+                    "src/dashboard/app.py", 
+                    "--server.port=8502",
+                    "--server.address=localhost",
+                    "--server.fileWatcherType=none"
+                ], check=True)
+            else:
+                print("Cannot launch subprocess in deployment environment")
+                return False
+        except Exception as subprocess_error:
+            print(f"Error with subprocess approach: {subprocess_error}")
+            return False
     
     return True
 
