@@ -75,26 +75,17 @@ st.markdown("""
 def load_data():
     """Load and cache vehicle registration data."""
     try:
-        # Check if we're in deployment mode
-        is_deployment = os.environ.get('STREAMLIT_DEPLOYMENT', 'false').lower() == 'true'
-        
         scraper = VahanDataScraper()
-        
-        if is_deployment:
-            # In deployment, create sample data if files don't exist
-            st.info("🚀 Running in deployment mode - generating sample data...")
         
         data = scraper.load_sample_data()
         
         if data.empty:
-            st.warning("📊 No sample data found - generating new sample data...")
             # Generate sample data if none exists
             data = scraper.generate_sample_data()
         
         return data
     except Exception as e:
         st.error(f"Error loading data: {e}")
-        st.info("📊 Attempting to generate backup sample data...")
         try:
             # Fallback: create minimal sample data directly
             import pandas as pd
@@ -216,7 +207,9 @@ def main():
         st.sidebar.success(f"📅 Selected: {start_date} to {max_date} ({days_selected} days)")
     
     # Vehicle category filter
-    categories = processor.processed_data['vehicle_category'].unique()
+    # Determine the correct category column name
+    category_col_name = 'vehicle_category' if 'vehicle_category' in processor.processed_data.columns else 'category'
+    categories = processor.processed_data[category_col_name].unique()
     selected_categories = st.sidebar.multiselect(
         "Vehicle Categories",
         options=categories,
@@ -317,7 +310,7 @@ def main():
             with col1:
                 # Top growing manufacturers
                 top_growth = latest_yoy.nlargest(5, 'yoy_growth_pct')[
-                    ['manufacturer', 'vehicle_category', 'yoy_growth_pct']
+                    ['manufacturer', category_col_name, 'yoy_growth_pct']
                 ].copy()
                 top_growth['yoy_growth_pct'] = top_growth['yoy_growth_pct'].round(2)
                 
@@ -346,7 +339,7 @@ def main():
             with col1:
                 # Top growing manufacturers
                 top_growth_qoq = latest_qoq.nlargest(5, 'qoq_growth_pct')[
-                    ['manufacturer', 'vehicle_category', 'qoq_growth_pct']
+                    ['manufacturer', category_col_name, 'qoq_growth_pct']
                 ].copy()
                 top_growth_qoq['qoq_growth_pct'] = top_growth_qoq['qoq_growth_pct'].round(2)
                 
@@ -365,6 +358,8 @@ def main():
     
     # Trend Analysis
     st.header("📈 Trend Analysis")
+    # Determine the correct category column name
+    category_col = 'vehicle_category' if 'vehicle_category' in filtered_data.columns else 'category'
     
     trend_tab1, trend_tab2, trend_tab3 = st.tabs(
         ["Registration Trends", "Market Share", "Category Comparison"]
@@ -373,15 +368,24 @@ def main():
     with trend_tab1:
         st.subheader("Vehicle Registration Trends Over Time")
         
+        # Check if we have the required columns
+        if category_col not in filtered_data.columns:
+            st.error(f"❌ Required column '{category_col}' not found in data. Available columns: {list(filtered_data.columns)}")
+            return
+        
         # Show period-specific insights
         if selected_days <= 30:
             st.info("📊 Showing daily trends for the selected period")
             # For short periods, show daily trends
-            trend_data = filtered_data.groupby(['date', 'vehicle_category']).agg({
-                'registrations': 'sum'
-            }).reset_index()
-            x_col = 'date'
-            time_format = "Daily"
+            try:
+                trend_data = filtered_data.groupby(['date', category_col]).agg({
+                    'registrations': 'sum'
+                }).reset_index()
+                x_col = 'date'
+                time_format = "Daily"
+            except Exception as e:
+                st.error(f"Error creating daily trend data: {e}")
+                return
         else:
             # Trend granularity selection
             trend_granularity = st.selectbox(
@@ -392,40 +396,47 @@ def main():
             time_format = trend_granularity
             
             # Create trend chart
-            if trend_granularity == "Monthly":
-                trend_data = filtered_data.groupby(['year_month', 'vehicle_category']).agg({
-                    'registrations': 'sum'
-                }).reset_index()
-                x_col = 'year_month'
-            elif trend_granularity == "Quarterly":
-                trend_data = filtered_data.groupby(['year_quarter', 'vehicle_category']).agg({
-                    'registrations': 'sum'
-                }).reset_index()
-                x_col = 'year_quarter'
-            else:  # Yearly
-                trend_data = filtered_data.groupby(['year', 'vehicle_category']).agg({
-                    'registrations': 'sum'
-                }).reset_index()
-                x_col = 'year'
+            try:
+                if trend_granularity == "Monthly":
+                    trend_data = filtered_data.groupby(['year_month', category_col]).agg({
+                        'registrations': 'sum'
+                    }).reset_index()
+                    x_col = 'year_month'
+                elif trend_granularity == "Quarterly":
+                    trend_data = filtered_data.groupby(['year_quarter', category_col]).agg({
+                        'registrations': 'sum'
+                    }).reset_index()
+                    x_col = 'year_quarter'
+                else:  # Yearly
+                    trend_data = filtered_data.groupby(['year', category_col]).agg({
+                        'registrations': 'sum'
+                    }).reset_index()
+                    x_col = 'year'
+            except Exception as e:
+                st.error(f"Error creating {trend_granularity.lower()} trend data: {e}")
+                return
         
         if not trend_data.empty:
-            fig_trend = create_trend_chart(trend_data, x_col, 'registrations', 'vehicle_category')
-            st.plotly_chart(fig_trend, use_container_width=True)
-            
-            # Show summary statistics for the period
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                peak_day = trend_data.groupby(x_col)['registrations'].sum().idxmax()
-                peak_registrations = trend_data.groupby(x_col)['registrations'].sum().max()
-                st.metric("Peak Period", str(peak_day), f"{peak_registrations:,} registrations")
-            
-            with col2:
-                avg_period = trend_data.groupby(x_col)['registrations'].sum().mean()
-                st.metric(f"Avg {time_format}", f"{avg_period:,.0f}")
-            
-            with col3:
-                total_periods = trend_data[x_col].nunique()
-                st.metric(f"Total {time_format} Periods", total_periods)
+            try:
+                fig_trend = create_trend_chart(trend_data, x_col, 'registrations', category_col)
+                st.plotly_chart(fig_trend, use_container_width=True)
+                
+                # Show summary statistics for the period
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    peak_day = trend_data.groupby(x_col)['registrations'].sum().idxmax()
+                    peak_registrations = trend_data.groupby(x_col)['registrations'].sum().max()
+                    st.metric("Peak Period", str(peak_day), f"{peak_registrations:,} registrations")
+                
+                with col2:
+                    avg_period = trend_data.groupby(x_col)['registrations'].sum().mean()
+                    st.metric(f"Avg {time_format}", f"{avg_period:,.0f}")
+                
+                with col3:
+                    total_periods = trend_data[x_col].nunique()
+                    st.metric(f"Total {time_format} Periods", total_periods)
+            except Exception as e:
+                st.error(f"Error creating trend chart: {e}")
         else:
             st.warning("No trend data available for the selected period and filters.")
     
@@ -435,144 +446,153 @@ def main():
         # Always calculate market share for the selected period
         st.info("📊 Showing market share for the selected period")
         
-        # Calculate market share for the entire selected period
-        period_market_share = filtered_data.groupby(['manufacturer', 'vehicle_category']).agg({
-            'registrations': 'sum'
-        }).reset_index()
-        
-        # Calculate total registrations by category for percentage calculation
-        category_totals = period_market_share.groupby('vehicle_category')['registrations'].sum().reset_index()
-        category_totals = category_totals.rename(columns={'registrations': 'category_total'})
-        
-        # Merge to get category totals
-        period_market_share = period_market_share.merge(category_totals, on='vehicle_category')
-        
-        # Calculate market share percentages within each category
-        period_market_share['market_share_pct'] = (
-            period_market_share['registrations'] / period_market_share['category_total'] * 100
-        )
-        
-        # Create a unique key based on the current date selection and filters
-        filter_key = f"{date_range}_{sorted(selected_categories)}_{len(selected_manufacturers)}"
-        
-        # Market share by category
-        category_choice = st.selectbox(
-            "Select Vehicle Category for Market Share",
-            options=selected_categories,
-            key=f"market_share_category_{hash(filter_key) % 10000}"  # Use filter-based key
-        )
-        
-        category_market_share = period_market_share[
-            period_market_share['vehicle_category'] == category_choice
-        ].copy()
-        
-        if not category_market_share.empty and len(category_market_share) > 0:
-            fig_market = create_market_share_chart(category_market_share, category_choice)
-            st.plotly_chart(fig_market, use_container_width=True)
-            
-            # Market share table
-            market_table = category_market_share[
-                ['manufacturer', 'registrations', 'market_share_pct']
-            ].sort_values('market_share_pct', ascending=False)
-            market_table['market_share_pct'] = market_table['market_share_pct'].round(2)
-            
-            # Format the table for better display
-            market_table_display = market_table.copy()
-            market_table_display['Market Share %'] = market_table_display['market_share_pct'].astype(str) + '%'
-            market_table_display['Registrations'] = market_table_display['registrations'].apply(lambda x: f"{x:,}")
-            
-            # Show period info
-            if len(date_range) == 2:
-                period_label = f"{date_range[0]} to {date_range[1]}"
-                days_in_period = (date_range[1] - date_range[0]).days
-                st.caption(f"Period: {period_label} ({days_in_period} days)")
-            else:
-                st.caption("Period: All available data")
-            
-            st.subheader(f"Market Share Details - {category_choice}")
-            st.dataframe(
-                market_table_display[['manufacturer', 'Registrations', 'Market Share %']], 
-                hide_index=True,
-                use_container_width=True
-            )
-            
-            # Additional insights
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                leader = market_table.iloc[0]
-                st.metric("Market Leader", leader['manufacturer'], f"{leader['market_share_pct']:.1f}%")
-            
-            with col2:
-                total_manufacturers = len(market_table)
-                st.metric("Active Manufacturers", total_manufacturers)
-            
-            with col3:
-                total_category_registrations = category_market_share['registrations'].sum()
-                st.metric("Total Registrations", f"{total_category_registrations:,}")
-                
-        else:
-            st.warning(f"No market share data available for {category_choice} in the selected period.")
-            st.write("This might be because:")
-            st.write("- No registrations recorded for this category in the selected time period")
-            st.write("- The category filter is excluding all relevant data")
-            st.write("- Try selecting a longer time period or different filters")
-    
-    with trend_tab3:
-        st.subheader("Vehicle Category Comparison")
-        
-        # Category trends - adjust based on period length
-        if selected_days <= 30:
-            # For short periods, show daily category trends
-            category_trends = filtered_data.groupby(['date', 'vehicle_category']).agg({
+        try:
+            # Calculate market share for the entire selected period
+            period_market_share = filtered_data.groupby(['manufacturer', category_col]).agg({
                 'registrations': 'sum'
             }).reset_index()
-            time_col = 'date'
-            period_label = "Daily"
-        else:
-            # For longer periods, use monthly trends
-            category_trends = filtered_processor.get_category_trends()
-            time_col = 'year_month'
-            period_label = "Monthly"
+            
+            # Calculate total registrations by category for percentage calculation
+            category_totals = period_market_share.groupby(category_col)['registrations'].sum().reset_index()
+            category_totals = category_totals.rename(columns={'registrations': 'category_total'})
+            
+            # Merge to get category totals
+            period_market_share = period_market_share.merge(category_totals, on=category_col)
+            
+            # Calculate market share percentages within each category
+            period_market_share['market_share_pct'] = (
+                period_market_share['registrations'] / period_market_share['category_total'] * 100
+            )
+            
+            # Create a unique key based on the current date selection and filters
+            filter_key = f"{date_range}_{sorted(selected_categories)}_{len(selected_manufacturers)}"
+            
+            # Market share by category
+            category_choice = st.selectbox(
+                "Select Vehicle Category for Market Share",
+                options=period_market_share[category_col].unique(),
+                key=f"market_share_category_{filter_key}"
+            )
+            
+            # Filter for selected category
+            category_market_share = period_market_share[
+                period_market_share[category_col] == category_choice
+            ][['manufacturer', 'registrations', 'market_share_pct']].sort_values('market_share_pct', ascending=False)
+            
+            if not category_market_share.empty:
+                # Create pie chart
+                fig_market = create_market_share_chart(
+                    category_market_share, 
+                    'manufacturer', 
+                    'market_share_pct',
+                    title=f"Market Share - {category_choice}"
+                )
+                st.plotly_chart(fig_market, use_container_width=True)
+                
+                # Show market share table
+                st.dataframe(
+                    category_market_share.style.format({
+                        'registrations': '{:,.0f}',
+                        'market_share_pct': '{:.1f}%'
+                    }),
+                    use_container_width=True
+                )
+            else:
+                st.warning(f"No market share data available for {category_choice}")
+                
+        except Exception as e:
+            st.error(f"Error creating market share analysis: {e}")
+    
+    with trend_tab3:
+        st.subheader("Category Comparison")
         
-        if not category_trends.empty:
-            fig_category = create_category_comparison_chart(category_trends, time_col)
-            st.plotly_chart(fig_category, use_container_width=True)
+        try:
+            # Show comparison metrics for all categories in the selected period
+            comparison_data = filtered_data.groupby(category_col).agg({
+                'registrations': ['sum', 'mean', 'count']
+            }).round(2)
             
-            # Category summary table
-            latest_period = category_trends[time_col].max()
-            latest_category_data = category_trends[
-                category_trends[time_col] == latest_period
-            ][['vehicle_category', 'registrations']].sort_values('registrations', ascending=False)
+            comparison_data.columns = ['Total Registrations', 'Average Daily', 'Days with Data']
+            comparison_data = comparison_data.reset_index()
             
-            st.subheader(f"Category Performance - {latest_period} ({period_label})")
-            
-            # Add percentage breakdown
-            total_latest = latest_category_data['registrations'].sum()
-            latest_category_data['percentage'] = (
-                latest_category_data['registrations'] / total_latest * 100
-            ).round(1)
-            
-            # Display with better formatting
-            col1, col2 = st.columns(2)
-            with col1:
-                st.dataframe(latest_category_data, hide_index=True)
-            
-            with col2:
-                # Show category insights
-                top_category = latest_category_data.iloc[0]
-                st.metric(
-                    "Leading Category", 
-                    top_category['vehicle_category'],
-                    f"{top_category['percentage']}% of total"
+            if not comparison_data.empty:
+                # Create comparison chart
+                fig_comparison = create_category_comparison_chart(
+                    comparison_data, 
+                    category_col, 
+                    'Total Registrations'
+                )
+                st.plotly_chart(fig_comparison, use_container_width=True)
+                
+                # Display comparison table
+                st.dataframe(
+                    comparison_data.style.format({
+                        'Total Registrations': '{:,.0f}',
+                        'Average Daily': '{:,.0f}',
+                        'Days with Data': '{:.0f}'
+                    }),
+                    use_container_width=True
                 )
                 
-                category_count = len(latest_category_data)
-                st.metric("Active Categories", category_count)
+                # Show insights
+                top_category = comparison_data.loc[comparison_data['Total Registrations'].idxmax()]
+                st.success(f"🏆 **Top Performing Category:** {top_category[category_col]} with {top_category['Total Registrations']:,.0f} total registrations")
+            else:
+                st.warning("No category comparison data available for the selected period")
                 
-                avg_per_category = latest_category_data['registrations'].mean()
-                st.metric("Avg per Category", f"{avg_per_category:,.0f}")
+        except Exception as e:
+            st.error(f"Error creating category comparison: {e}")
+
+    # Category Performance Insights
+    st.header("📊 Category Performance Insights")
+    
+    try:
+        if not filtered_data.empty:
+            # Show category-wise insights for the selected period
+            category_summary = filtered_data.groupby(category_col).agg({
+                'registrations': ['sum', 'mean', 'max', 'count']
+            }).round(2)
+            
+            category_summary.columns = ['Total', 'Avg Daily', 'Peak Day', 'Days Active']
+            category_summary = category_summary.reset_index()
+            category_summary = category_summary.sort_values('Total', ascending=False)
+            
+            # Top performing category
+            if not category_summary.empty:
+                top_category = category_summary.iloc[0]
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric(
+                        "Top Category",
+                        top_category[category_col],
+                        f"{top_category['Total']:,.0f} registrations"
+                    )
+                
+                with col2:
+                    avg_per_category = category_summary['Total'].mean()
+                    st.metric("Avg per Category", f"{avg_per_category:,.0f}")
+                
+                with col3:
+                    active_categories = len(category_summary)
+                    st.metric("Active Categories", active_categories)
+                
+                # Show category breakdown
+                st.subheader("Category Performance Breakdown")
+                st.dataframe(
+                    category_summary.style.format({
+                        'Total': '{:,.0f}',
+                        'Avg Daily': '{:,.0f}',
+                        'Peak Day': '{:,.0f}',
+                        'Days Active': '{:.0f}'
+                    }),
+                    use_container_width=True
+                )
         else:
             st.warning("No category trend data available for the selected period.")
+    except Exception as e:
+        st.error(f"Error in category insights: {e}")
     
     # Data Export Section
     st.header("💾 Data Export")

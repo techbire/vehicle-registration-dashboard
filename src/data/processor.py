@@ -55,6 +55,9 @@ class VehicleDataProcessor:
         """Get summary statistics of the data."""
         df = self.processed_data
         
+        # Handle both 'vehicle_category' and 'category' column names
+        category_col = 'vehicle_category' if 'vehicle_category' in df.columns else 'category'
+        
         stats = {
             'total_records': len(df),
             'date_range': {
@@ -62,7 +65,7 @@ class VehicleDataProcessor:
                 'end': df['date'].max().strftime('%Y-%m-%d')
             },
             'total_registrations': df['registrations'].sum(),
-            'vehicle_categories': df['vehicle_category'].unique().tolist(),
+            'vehicle_categories': df[category_col].unique().tolist(),
             'manufacturers': df['manufacturer'].unique().tolist(),
             'years_covered': sorted(df['year'].unique().tolist()),
             'avg_monthly_registrations': df.groupby('year_month')['registrations'].sum().mean()
@@ -82,12 +85,15 @@ class VehicleDataProcessor:
         """
         df = self.processed_data
         
+        # Handle both 'vehicle_category' and 'category' column names
+        category_col = 'vehicle_category' if 'vehicle_category' in df.columns else 'category'
+        
         if period == 'month':
-            group_cols = ['year_month', 'vehicle_category', 'manufacturer']
+            group_cols = ['year_month', category_col, 'manufacturer']
         elif period == 'quarter':
-            group_cols = ['year_quarter', 'vehicle_category', 'manufacturer']
+            group_cols = ['year_quarter', category_col, 'manufacturer']
         elif period == 'year':
-            group_cols = ['year', 'vehicle_category', 'manufacturer']
+            group_cols = ['year', category_col, 'manufacturer']
         else:
             raise ValueError("Period must be 'month', 'quarter', or 'year'")
         
@@ -257,7 +263,9 @@ class VehicleDataProcessor:
         
         # Category filtering
         if vehicle_categories:
-            df = df[df['vehicle_category'].isin(vehicle_categories)]
+            # Handle both 'vehicle_category' and 'category' column names
+            category_col = 'vehicle_category' if 'vehicle_category' in df.columns else 'category'
+            df = df[df[category_col].isin(vehicle_categories)]
         
         # Manufacturer filtering
         if manufacturers:
